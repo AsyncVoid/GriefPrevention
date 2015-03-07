@@ -48,9 +48,11 @@ import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
+import org.bukkit.metadata.FixedMetadataValue;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.BlockIterator;
 
 public class GriefPrevention extends JavaPlugin
@@ -863,34 +865,63 @@ public class GriefPrevention extends JavaPlugin
 		else if(cmd.getName().equalsIgnoreCase("abandonallclaims") && player != null)
 		{
 			if(args.length != 0) return false;
-			
-			//count claims
-			PlayerData playerData = this.dataStore.getPlayerData(player.getUniqueId());
-			int originalClaimCount = playerData.getClaims().size();
-			
-			//check count
-			if(originalClaimCount == 0)
-			{
-				GriefPrevention.sendMessage(player, TextMode.Err, Messages.YouHaveNoClaims);
-				return true;
+			if(player.hasMetadata("abandonallclaims_confirm")){
+				if(player.getMetadata("abandonallclaims_confirm").get(0).asBoolean())
+				{
+					//count claims
+					PlayerData playerData = this.dataStore.getPlayerData(player.getUniqueId());
+					int originalClaimCount = playerData.getClaims().size();
+				
+					//check count
+					if(originalClaimCount == 0)
+					{
+						GriefPrevention.sendMessage(player, TextMode.Err, Messages.YouHaveNoClaims);
+						return true;
+					}
+					
+					//adjust claim blocks
+					for(Claim claim : playerData.getClaims())
+					{
+						playerData.setAccruedClaimBlocks(playerData.getAccruedClaimBlocks() - (int)Math.ceil((claim.getArea() * (1 - this.config_claims_abandonReturnRatio))));
+					}
+				
+					//delete them
+					this.dataStore.deleteClaimsForPlayer(player.getUniqueId(), false);
+				
+					//inform the player
+					int remainingBlocks = playerData.getRemainingClaimBlocks();
+					GriefPrevention.sendMessage(player, TextMode.Success, Messages.SuccessfulAbandon, String.valueOf(remainingBlocks));
+				
+					//revert any current visualization
+					Visualization.Revert(player);
+				
+					
+				}else{
+					player.sendMessage("This will unclaim all your current claims. Are you sure? If so repeat the command within 30 seconds.");
+					player.setMetadata("abandonallclaims_confirm", new FixedMetaDataValue(this, true));
+					final Player p = player;
+					new BukkitRunnable(){
+
+						@Override
+						public void run() {
+							p.setMetadata("abandonallclaims_confirm", new FixedMetadataValue(GriefPrevention.instance, false));
+						}
+						
+					}.runTaskLater(this, 600L);
+				}
+			}else{
+				player.sendMessage("This will unclaim all your current claims. Are you sure? If so repeat the command within 30 seconds.");
+				player.setMetadata("abandonallclaims_confirm", new FixedMetaDataValue(this, true));
+				final Player p = player;
+				new BukkitRunnable(){
+
+					@Override
+					public void run() {
+						p.setMetadata("abandonallclaims_confirm", new FixedMetadataValue(GriefPrevention.instance, false));
+					}
+					
+				}.runTaskLater(this, 600L);
 			}
-			
-			//adjust claim blocks
-			for(Claim claim : playerData.getClaims())
-			{
-			    playerData.setAccruedClaimBlocks(playerData.getAccruedClaimBlocks() - (int)Math.ceil((claim.getArea() * (1 - this.config_claims_abandonReturnRatio))));
-			}
-			
-			//delete them
-			this.dataStore.deleteClaimsForPlayer(player.getUniqueId(), false);
-			
-			//inform the player
-			int remainingBlocks = playerData.getRemainingClaimBlocks();
-			GriefPrevention.sendMessage(player, TextMode.Success, Messages.SuccessfulAbandon, String.valueOf(remainingBlocks));
-			
-			//revert any current visualization
-			Visualization.Revert(player);
-			
 			return true;
 		}
 		
